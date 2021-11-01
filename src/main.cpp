@@ -4,6 +4,7 @@
 #include "Adafruit_SSD1306.h"
 #include "TimerOne.h"
 
+#pragma region
 const uint8_t xPin = A0;
 const uint8_t yPin = A1;
 const uint8_t zPin = A2;
@@ -20,6 +21,7 @@ const uint8_t buzzerPin = 8;
 #define SCREEN_HEIGHT 32
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C
+#pragma endregion
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
@@ -52,6 +54,7 @@ boolean timePaused = false;
 struct Clock {
   unsigned long totalTime;
   unsigned long alarmTime[5];
+  byte nAlarmSet;
 } clock;
 
 void updateTime() {
@@ -59,26 +62,22 @@ void updateTime() {
     clock.totalTime++;
 }
 
-void displayTime() {
-  display.setCursor(15, 10);
+void printToDisplay(const char* txt, int x, int y) {
   display.clearDisplay();
+  display.setCursor(x, y);
+  display.println(txt);
+  display.display();
+}
 
-  unsigned long sec = (clock.totalTime % 3600) % 60;
-  unsigned long min = (clock.totalTime % 3600) / 60;
-  unsigned long hour = clock.totalTime / 3600;
+void displayTime(unsigned long time) {
+  unsigned long sec = (time % 3600) % 60;
+  unsigned long min = (time % 3600) / 60;
+  unsigned long hour = time / 3600;
 
   char timeStr[10];
   sprintf(timeStr, "%02ld:%02ld:%02ld", hour, min, sec);
 
-  display.println(timeStr);
-  display.display();
-}
-
-void printToDisplay(const char* txt) {
-  display.clearDisplay();
-  display.setCursor(15, 10);
-  display.println(txt);
-  display.display();
+  printToDisplay(timeStr, 15, 10);
 }
 
 int eeAddress = 0;
@@ -92,6 +91,8 @@ void setup() {
     for(;;);
   }
 
+  pinMode(buzzerPin, OUTPUT);
+
   btnL.begin();
   btnM.begin();
   btnR.begin();
@@ -103,6 +104,7 @@ void setup() {
 
   display.setTextColor(WHITE);
   display.setTextSize(2);
+  display.setRotation(2);
 }
 
 void loop() {
@@ -118,14 +120,14 @@ void loop() {
 
   static enum STATE {
     DISPLAY_TIME, SET_TIME, ALARM_MENU,
-    MENU, ADD_ALARM
+    MENU, ADD_ALARM, EDIT_ALARM, REMOVE_ALARM
   } currState;
 
   switch (currState) {
 
   case DISPLAY_TIME: {
     timePaused = false;
-    displayTime();
+    displayTime(clock.totalTime);
 
     if (btnL.isPressed())
       currState = MENU;
@@ -144,11 +146,11 @@ void loop() {
     if (btnM.isPressed())
       selectedOption = (selectedOption - 1 + 3) % 3;
     
-    printToDisplay(modeName[selectedOption]);
+    printToDisplay(modeName[selectedOption], 15, 10);
 
     if (btnL.isPressed()) {
-      selectedOption = 0;
       currState = (STATE)selectedOption;
+      selectedOption = 0;
     }
 
     break;
@@ -182,7 +184,7 @@ void loop() {
         completedTime = millis();
         setTimeCompleted = true;
 
-        printToDisplay("Time set!");
+        printToDisplay("Time set!", 15, 10);
       }
     }
 
@@ -195,7 +197,7 @@ void loop() {
     }
 
     if (!setTimeCompleted)
-      displayTime();
+      displayTime(clock.totalTime);
 
     break;
   }
@@ -211,13 +213,77 @@ void loop() {
     if (btnM.isPressed())
       selectedOption = (selectedOption - 1 + 3) % 3;
     
-    printToDisplay(modeName[selectedOption]);
+    printToDisplay(modeName[selectedOption], 15, 10);
 
     if (btnL.isPressed()) {
+      
+      switch (selectedOption) {
+        case 0:
+          currState = ADD_ALARM;
+          break;
+        case 1:
+          currState = EDIT_ALARM;
+          break;
+        case 2:
+          break;
+        default:
+          break;
+      }
+
       selectedOption = 0;
-      currState = (STATE)selectedOption;
     }
 
+    break;
+  }
+
+  case ADD_ALARM: {
+    timePaused = false;
+
+    static enum { HOUR, MIN, SEC } setMode = HOUR;
+    static unsigned long completedTime = 0;
+    static boolean addAlarmCompleted = false;
+    static unsigned long alarmSetTime = 0;
+
+    static const unsigned long advancedTime[3] = {3600, 60, 1};
+
+    if (btnM.isPressed())
+      alarmSetTime = (alarmSetTime - advancedTime[setMode] + 86400) % 86400;
+    if (btnR.isPressed())
+      alarmSetTime = (alarmSetTime + advancedTime[setMode]) % 86400;
+
+    if (setMode == HOUR) {
+      if (btnL.isPressed())
+        setMode = MIN;
+    }
+    else if (setMode == MIN) {
+      if (btnL.isPressed())
+        setMode = SEC;
+    }
+    else if (setMode == SEC) {
+      if (btnL.isPressed()) {
+        completedTime = millis();
+        addAlarmCompleted = true;
+
+        printToDisplay("Alarm Set!", 7, 10);
+      }
+    }
+
+    if (addAlarmCompleted && millis() - completedTime > 1000) {
+      setMode = HOUR;
+      completedTime = 0;
+      addAlarmCompleted = false;
+      alarmSetTime = 0;
+
+      currState = DISPLAY_TIME;
+    }
+
+    if (!addAlarmCompleted)
+      displayTime(alarmSetTime);
+
+    break;
+  }
+
+  case EDIT_ALARM: {
     break;
   }
 
