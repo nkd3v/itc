@@ -1,0 +1,25 @@
+{
+	"folders": [
+		{
+			"name": "mynano",
+			"path": ".."
+		}
+	],
+    "settings": {
+        "files.associations": {
+            "*.c": "c",
+            "*.cpp": "cpp",
+            "atomic": "cpp",
+            "ios": "cpp",
+            "xiosbase": "cpp",
+            "deque": "cpp",
+            "forward_list": "cpp",
+            "list": "cpp",
+            "system_error": "cpp",
+            "vector": "cpp",
+            "xhash": "cpp",
+            "xstring": "cpp",
+            "xtree": "cpp"
+        }
+    }
+}
