@@ -15,7 +15,7 @@ const uint8_t btnLPin = 2;
 const uint8_t btnMPin = 3;
 const uint8_t btnRPin = 4;
 
-const uint8_t buzzerPin = 8;
+const uint8_t speakerPin = 8;
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 32
@@ -54,6 +54,7 @@ boolean timePaused = false;
 struct Clock {
   unsigned long totalTime;
   unsigned long alarmTime[5];
+  int nMaxAlarm = 5;
   byte nAlarmSet;
 } clock;
 
@@ -80,10 +81,14 @@ void displayTime(unsigned long time) {
   printToDisplay(timeStr, 15, 10);
 }
 
+void playSong() {
+  tone(speakerPin, 800, 500);
+}
+
 int eeAddress = 0;
 
 void setup() {
-
+  
   Serial.begin(9600);
 
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -91,7 +96,7 @@ void setup() {
     for(;;);
   }
 
-  pinMode(buzzerPin, OUTPUT);
+  pinMode(speakerPin, OUTPUT);
 
   btnL.begin();
   btnM.begin();
@@ -111,6 +116,12 @@ void loop() {
   if (clock.totalTime % 60 == 0)
     EEPROM.put(eeAddress, clock);
 
+  for (int i = 0; i < clock.nAlarmSet; i++) {
+    if (clock.totalTime == clock.alarmTime[i]) {
+      playSong();
+    }
+  }
+
   float xAccel = (analogRead(xPin) - 507) / 112.;
   // float yAccel = (analogRead(yPin) - 514) / 111.;
   // float zAccel = (analogRead(zPin) - 503) / 100.;
@@ -125,169 +136,165 @@ void loop() {
 
   switch (currState) {
 
-  case DISPLAY_TIME: {
-    timePaused = false;
-    displayTime(clock.totalTime);
-
-    if (btnL.isPressed())
-      currState = MENU;
-
-    break;
-  }
-
-  case MENU: {
-    timePaused = false;
-
-    static int selectedOption = 0;
-    const char* modeName[] = { "Show Time", "Set Time", "Set Alarm" };
-
-    if (btnR.isPressed()) 
-      selectedOption = (selectedOption + 1) % 3;
-    if (btnM.isPressed())
-      selectedOption = (selectedOption - 1 + 3) % 3;
-    
-    printToDisplay(modeName[selectedOption], 15, 10);
-
-    if (btnL.isPressed()) {
-      currState = (STATE)selectedOption;
-      selectedOption = 0;
-    }
-
-    break;
-  }
-
-  case SET_TIME: {
-    timePaused = true;
-
-    static enum { HOUR, MIN, SEC } setMode = HOUR;
-    static unsigned long completedTime = 0;
-    static boolean setTimeCompleted = false;
-
-    const unsigned long advancedTime[3] = {3600, 60, 1};
-
-    if (btnM.isPressed())
-      clock.totalTime = (clock.totalTime - advancedTime[setMode] + 86400) % 86400;
-    if (btnR.isPressed())
-      clock.totalTime = (clock.totalTime + advancedTime[setMode]) % 86400;
-
-    if (setMode == HOUR) {
-      if (btnL.isPressed())
-        setMode = MIN;
-    }
-    else if (setMode == MIN) {
-      if (btnL.isPressed())
-        setMode = SEC;
-    }
-    else if (setMode == SEC) {
-      if (btnL.isPressed()) {
-        EEPROM.put(eeAddress, clock);
-        completedTime = millis();
-        setTimeCompleted = true;
-
-        printToDisplay("Time set!", 15, 10);
-      }
-    }
-
-    if (setTimeCompleted && millis() - completedTime > 1000) {
-      setMode = HOUR;
-      completedTime = 0;
-      setTimeCompleted = false;
-
-      currState = DISPLAY_TIME;
-    }
-
-    if (!setTimeCompleted)
+    case DISPLAY_TIME: {
+      timePaused = false;
       displayTime(clock.totalTime);
 
-    break;
-  }
+      if (btnL.isPressed())
+        currState = MENU;
 
-  case ALARM_MENU: {
-    timePaused = false;
+      break;
+    }
 
-    static int selectedOption = 0;
-    const char* modeName[] = { "Add", "Edit", "Remove" };
+    case MENU: {
+      timePaused = false;
 
-    if (btnR.isPressed()) 
-      selectedOption = (selectedOption + 1) % 3;
-    if (btnM.isPressed())
-      selectedOption = (selectedOption - 1 + 3) % 3;
-    
-    printToDisplay(modeName[selectedOption], 15, 10);
+      static int selectedOption = 0;
+      const char* modeName[] = { "Show Time", "Set Time", "Set Alarm" };
 
-    if (btnL.isPressed()) {
+      if (btnR.isPressed()) 
+        selectedOption = (selectedOption + 1) % 3;
+      if (btnM.isPressed())
+        selectedOption = (selectedOption - 1 + 3) % 3;
       
-      switch (selectedOption) {
-        case 0:
-          currState = ADD_ALARM;
-          break;
-        case 1:
-          currState = EDIT_ALARM;
-          break;
-        case 2:
-          break;
-        default:
-          break;
-      }
+      printToDisplay(modeName[selectedOption], 15, 10);
 
-      selectedOption = 0;
-    }
-
-    break;
-  }
-
-  case ADD_ALARM: {
-    timePaused = false;
-
-    static enum { HOUR, MIN, SEC } setMode = HOUR;
-    static unsigned long completedTime = 0;
-    static boolean addAlarmCompleted = false;
-    static unsigned long alarmSetTime = 0;
-
-    static const unsigned long advancedTime[3] = {3600, 60, 1};
-
-    if (btnM.isPressed())
-      alarmSetTime = (alarmSetTime - advancedTime[setMode] + 86400) % 86400;
-    if (btnR.isPressed())
-      alarmSetTime = (alarmSetTime + advancedTime[setMode]) % 86400;
-
-    if (setMode == HOUR) {
-      if (btnL.isPressed())
-        setMode = MIN;
-    }
-    else if (setMode == MIN) {
-      if (btnL.isPressed())
-        setMode = SEC;
-    }
-    else if (setMode == SEC) {
       if (btnL.isPressed()) {
-        completedTime = millis();
-        addAlarmCompleted = true;
-
-        printToDisplay("Alarm Set!", 7, 10);
+        currState = (STATE)selectedOption;
+        selectedOption = 0;
       }
+
+      break;
     }
 
-    if (addAlarmCompleted && millis() - completedTime > 1000) {
-      setMode = HOUR;
-      completedTime = 0;
-      addAlarmCompleted = false;
-      alarmSetTime = 0;
+    case SET_TIME: {
+      timePaused = true;
 
-      currState = DISPLAY_TIME;
+      static enum { HOUR, MIN, SEC } setMode = HOUR;
+      static unsigned long completedTime = 0;
+      static boolean setTimeCompleted = false;
+
+      const unsigned long advancedTime[3] = {3600, 60, 1};
+
+      if (btnM.isPressed())
+        clock.totalTime = (clock.totalTime - advancedTime[setMode] + 86400) % 86400;
+      if (btnR.isPressed())
+        clock.totalTime = (clock.totalTime + advancedTime[setMode]) % 86400;
+
+      if (btnL.isPressed()) {
+        if (setMode == HOUR)
+          setMode = MIN;
+        else if (setMode == MIN)
+          setMode = SEC;
+        else if (setMode == SEC) {
+          EEPROM.put(eeAddress, clock);
+          completedTime = millis();
+          setTimeCompleted = true;
+
+          printToDisplay("Time set!", 15, 10);
+        }
+      }
+
+      if (setTimeCompleted && millis() - completedTime > 1000) {
+        setMode = HOUR;
+        completedTime = 0;
+        setTimeCompleted = false;
+
+        currState = DISPLAY_TIME;
+      }
+
+      if (!setTimeCompleted)
+        displayTime(clock.totalTime);
+
+      break;
     }
 
-    if (!addAlarmCompleted)
-      displayTime(alarmSetTime);
+    case ALARM_MENU: {
+      timePaused = false;
 
-    break;
-  }
+      static int selectedOption = 0;
+      const char* modeName[] = { "Add", "Edit", "Remove" };
 
-  case EDIT_ALARM: {
-    break;
-  }
+      if (btnR.isPressed()) 
+        selectedOption = (selectedOption + 1) % 3;
+      if (btnM.isPressed())
+        selectedOption = (selectedOption - 1 + 3) % 3;
+      
+      printToDisplay(modeName[selectedOption], 15, 10);
 
-  default:
-    break;
+      if (btnL.isPressed()) {
+        if (selectedOption == 0) currState = ADD_ALARM;
+        if (selectedOption == 1) currState = EDIT_ALARM;
+        if (selectedOption == 2) currState = REMOVE_ALARM;
+
+        selectedOption = 0;
+      }
+
+      break;
+    }
+
+    case ADD_ALARM: {
+      timePaused = false;
+
+      if (clock.nAlarmSet == clock.nMaxAlarm) {
+        printToDisplay("Full", 15, 10);
+        currState = DISPLAY_TIME;
+      }
+
+      static enum { HOUR, MIN, SEC } setMode = HOUR;
+      static unsigned long completedTime = 0;
+      static boolean setAlarmCompleted = false;
+      static unsigned long alarmSetTime = 0;
+
+      static const unsigned long advancedTime[3] = {3600, 60, 1};
+
+      if (btnM.isPressed())
+        alarmSetTime = (alarmSetTime - advancedTime[setMode] + 86400) % 86400;
+      if (btnR.isPressed())
+        alarmSetTime = (alarmSetTime + advancedTime[setMode]) % 86400;
+
+      if (btnL.isPressed()) {
+        if (setMode == HOUR)
+          setMode = MIN;
+        else if (setMode == MIN)
+          setMode = SEC;
+        else if (setMode == SEC) {
+          completedTime = millis();
+          setAlarmCompleted = true;
+
+          clock.alarmTime[clock.nAlarmSet] = alarmSetTime;
+          clock.nAlarmSet++;
+
+          printToDisplay("Alarm Set!", 7, 10);
+        }
+      }
+
+      if (setAlarmCompleted && millis() - completedTime > 1000) {
+        setMode = HOUR;
+        completedTime = 0;
+        setAlarmCompleted = false;
+        alarmSetTime = 0;
+
+        currState = DISPLAY_TIME;
+      }
+
+      if (!setAlarmCompleted)
+        displayTime(alarmSetTime);
+
+      break;
+    }
+
+    case EDIT_ALARM: {
+
+      break;
+    }
+
+    case REMOVE_ALARM: {
+      
+      break;
+    }
+
+    default:
+      break;
   }
 }
