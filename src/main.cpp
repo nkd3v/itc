@@ -4,7 +4,6 @@
 #include "Adafruit_SSD1306.h"
 #include "TimerOne.h"
 
-#pragma region
 const uint8_t xPin = A0;
 const uint8_t yPin = A1;
 const uint8_t zPin = A2;
@@ -21,7 +20,6 @@ const uint8_t speakerPin = 8;
 #define SCREEN_HEIGHT 32
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C
-#pragma endregion
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
@@ -50,9 +48,10 @@ Button btnM(btnMPin);
 Button btnR(btnRPin);
 
 boolean timePaused = false;
+int eeAddress = 0;
 
 struct Clock {
-  unsigned long totalTime;
+  unsigned long time;
   unsigned long alarmTime[5];
   int nMaxAlarm = 5;
   byte nAlarmSet;
@@ -60,7 +59,10 @@ struct Clock {
 
 void updateTime() {
   if (!timePaused)
-    clock.totalTime++;
+    clock.time++;
+
+  if (clock.time % 60 == 0)
+    EEPROM.put(eeAddress, clock);
 }
 
 void printToDisplay(const char* txt, int x, int y) {
@@ -81,11 +83,32 @@ void displayTime(unsigned long time) {
   printToDisplay(timeStr, 15, 10);
 }
 
-void playSong() {
-  tone(speakerPin, 800, 500);
+const unsigned long alarmDuration = 10;
+boolean alarmActive = false;
+
+void playSound(unsigned long startTime) {
+  if ((millis() - startTime) % 400 > 200) {
+    tone(speakerPin, 300);
+  } else {
+    noTone(speakerPin);
+  }
 }
 
-int eeAddress = 0;
+void checkAlarm() {
+  for (int i = 0; i < clock.nAlarmSet; i++) {
+    static unsigned long alarmStartTime;
+    if (clock.time == clock.alarmTime[i]) {
+      alarmStartTime = millis();
+      alarmActive = true;
+    }
+    if (alarmActive && clock.time - clock.alarmTime[i] < alarmDuration) {
+      playSound(alarmStartTime);
+    } else {
+      noTone(speakerPin);
+      alarmActive = false;
+    }
+  }
+}
 
 void setup() {
   
@@ -101,7 +124,7 @@ void setup() {
   btnL.begin();
   btnM.begin();
   btnR.begin();
-
+  
   EEPROM.get(eeAddress, clock);
 
   Timer1.initialize(1E6);
@@ -113,32 +136,34 @@ void setup() {
 }
 
 void loop() {
-  if (clock.totalTime % 60 == 0)
-    EEPROM.put(eeAddress, clock);
 
-  for (int i = 0; i < clock.nAlarmSet; i++) {
-    if (clock.totalTime == clock.alarmTime[i]) {
-      playSong();
-    }
-  }
+  static enum STATE {
+    DISPLAY_TIME, SET_TIME, ALARM_MENU,
+    MENU, ADD_ALARM, REMOVE_ALARM
+  } currState;
 
   float xAccel = (analogRead(xPin) - 507) / 112.;
   // float yAccel = (analogRead(yPin) - 514) / 111.;
   // float zAccel = (analogRead(zPin) - 503) / 100.;
 
-  if (xAccel > 0.3) display.setRotation(0);
-  else if (xAccel < -0.3) display.setRotation(2);
-
-  static enum STATE {
-    DISPLAY_TIME, SET_TIME, ALARM_MENU,
-    MENU, ADD_ALARM, EDIT_ALARM, REMOVE_ALARM
-  } currState;
+  if (xAccel > 0.3)
+    display.setRotation(0);
+  else if (xAccel < -0.3)
+    display.setRotation(2);
 
   switch (currState) {
 
     case DISPLAY_TIME: {
       timePaused = false;
-      displayTime(clock.totalTime);
+
+      displayTime(clock.time);
+      checkAlarm();
+
+      if (alarmActive) {
+        if (btnL.isPressed() || btnM.isPressed() || btnR.isPressed()) {
+          alarmActive = false;
+        }
+      }
 
       if (btnL.isPressed())
         currState = MENU;
@@ -177,9 +202,9 @@ void loop() {
       const unsigned long advancedTime[3] = {3600, 60, 1};
 
       if (btnM.isPressed())
-        clock.totalTime = (clock.totalTime - advancedTime[setMode] + 86400) % 86400;
+        clock.time = (clock.time - advancedTime[setMode] + 86400) % 86400;
       if (btnR.isPressed())
-        clock.totalTime = (clock.totalTime + advancedTime[setMode]) % 86400;
+        clock.time = (clock.time + advancedTime[setMode]) % 86400;
 
       if (btnL.isPressed()) {
         if (setMode == HOUR)
@@ -204,7 +229,7 @@ void loop() {
       }
 
       if (!setTimeCompleted)
-        displayTime(clock.totalTime);
+        displayTime(clock.time);
 
       break;
     }
@@ -212,20 +237,23 @@ void loop() {
     case ALARM_MENU: {
       timePaused = false;
 
+      int nOptions = clock.nAlarmSet > 0 ? 2 : 1;
       static int selectedOption = 0;
-      const char* modeName[] = { "Add", "Edit", "Remove" };
+      const char* modeName[] = { "Add", "Remove" };
 
       if (btnR.isPressed()) 
-        selectedOption = (selectedOption + 1) % 3;
-      if (btnM.isPressed())
-        selectedOption = (selectedOption - 1 + 3) % 3;
+        selectedOption = (selectedOption + 1) % nOptions;
       
       printToDisplay(modeName[selectedOption], 15, 10);
 
+      if (btnM.isPressed()) {
+        currState = MENU;
+        selectedOption = 0;
+      }
+
       if (btnL.isPressed()) {
         if (selectedOption == 0) currState = ADD_ALARM;
-        if (selectedOption == 1) currState = EDIT_ALARM;
-        if (selectedOption == 2) currState = REMOVE_ALARM;
+        if (selectedOption == 1) currState = REMOVE_ALARM;
 
         selectedOption = 0;
       }
@@ -283,14 +311,44 @@ void loop() {
 
       break;
     }
-
-    case EDIT_ALARM: {
-
-      break;
-    }
-
+    
     case REMOVE_ALARM: {
-      
+      timePaused = false;
+
+      static unsigned long removeCompletedTime;
+      static boolean removeCompleted = false;
+
+      static int selectedOption = 0;
+      if (btnR.isPressed())
+        selectedOption = (selectedOption + 1) % clock.nAlarmSet;
+
+      if (btnM.isPressed()) {
+        currState = ALARM_MENU;
+        selectedOption = 0;
+      }
+
+      if (btnL.isPressed()) {
+        for (int i = selectedOption; i < clock.nAlarmSet - 1; i++) {
+          clock.alarmTime[i] = clock.alarmTime[i + 1];
+        }
+        clock.nAlarmSet--;
+        EEPROM.put(eeAddress, clock);
+
+        printToDisplay("Removed!", 10, 15);
+        removeCompletedTime = millis();
+        removeCompleted = true;
+      }
+
+      if (!removeCompleted)
+        printToDisplay(String(selectedOption + 1).c_str(), 10, 15);
+
+      if (removeCompleted && millis() - removeCompletedTime > 1000) {
+        selectedOption = 0;
+        removeCompleted = false;
+
+        currState = DISPLAY_TIME;
+      }
+
       break;
     }
 

@@ -1,38 +1,48 @@
 #include "Arduino.h"
 
-int buzzerPin = 8;
-int tempo = 200;
-char notes[] = "eeeeeeegcde fffffeeeeddedg";
-int duration[] = {1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2};
+int speakerPin = 8;
 
-void playTheTone(char note, int duration) {
-  char notesName[] = { 'c', 'd', 'e', 'f', 'g' };
-  int tones[] = { 261, 293, 329, 349, 392 };
+void setup() {
+  pinMode(speakerPin, OUTPUT);
+  Serial.begin(9600);
+}
 
-  for (int i = 0; i < sizeof(tones); i++) {
-    // Bind the note took from the char array to the array notesName
-    if (note == notesName[i]) {
-      // Bind the notesName to tones
-      tone(buzzerPin, tones[i], duration);
-    }
+void spaceGun(int maximum)
+{
+  for (int i=0; i < maximum; i+=2) {
+    digitalWrite(speakerPin, HIGH);
+    delayMicroseconds(i);
+    digitalWrite(speakerPin, LOW);
+    delayMicroseconds(i);    
   }
 }
 
-void setup() {
-  pinMode(buzzerPin, OUTPUT);
+void randSound(int maximum)
+{
+  tone(speakerPin,random(maximum,10*maximum));
+  delay(maximum);
+}
+
+void fibonacci(int maximum)
+{
+  long fib = 1;
+  long fib1 = 1;  
+  long fib2 = 2;
+  for (int i=0; i < maximum; i++) {
+    fib = fib1+fib2;
+    fib1 = fib2;
+    fib2 = fib;
+    tone(speakerPin,fib);
+    delay(200);
+  }
+  noTone(speakerPin);
 }
 
 void loop() {
-  // Scan each char from "notes"
-  for (int i = 0; i < sizeof(notes)-1; i++) {
-    if (notes[i] == ' ') {
-      // If find a space it rests
-      delay(duration[i] * tempo);
-    } else {
-      playTheTone(notes[i], duration[i] * tempo);
-    }
-
-    // Pauses between notes
-    delay((tempo*2)*duration[i]);
-  }
+  spaceGun(1000);
+  delay(5000);  
+  fibonacci(20);
+  delay(5000);  
+  //randSound(50);
+  //delay(5000);
 }
