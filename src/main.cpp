@@ -16,6 +16,9 @@ const uint8_t btnRPin = 4;
 
 const uint8_t speakerPin = 8;
 
+const unsigned int successFreq = 700;
+const unsigned int failFreq = 200;
+
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 32
 #define OLED_RESET -1
@@ -65,7 +68,20 @@ void updateTime() {
     EEPROM.put(eeAddress, clock);
 }
 
-void printToDisplay(const char* txt, int x, int y) {
+unsigned long prevPrintTime;
+unsigned long printDuration;
+boolean printLocked = false;
+
+void printToDisplay(const char* txt, int x, int y, unsigned long duration = 0) {
+  if (millis() - prevPrintTime <= printDuration) {
+    printLocked = true;
+    return;
+  }
+
+  prevPrintTime = millis();
+  printDuration = duration;
+  printLocked = false;
+
   display.clearDisplay();
   display.setCursor(x, y);
   display.println(txt);
@@ -142,6 +158,11 @@ void loop() {
     MENU, ADD_ALARM, REMOVE_ALARM
   } currState;
 
+  if (analogRead(ldrPin) > 480)
+    display.dim(true);
+  else
+    display.dim(false);
+
   float xAccel = (analogRead(xPin) - 507) / 112.;
   // float yAccel = (analogRead(yPin) - 514) / 111.;
   // float zAccel = (analogRead(zPin) - 503) / 100.;
@@ -179,10 +200,13 @@ void loop() {
 
       if (btnR.isPressed()) 
         selectedOption = (selectedOption + 1) % 3;
-      if (btnM.isPressed())
-        selectedOption = (selectedOption - 1 + 3) % 3;
       
       printToDisplay(modeName[selectedOption], 15, 10);
+
+      if (btnM.isPressed()) {
+        currState = DISPLAY_TIME;
+        selectedOption = 0;
+      }
 
       if (btnL.isPressed()) {
         currState = (STATE)selectedOption;
@@ -252,8 +276,17 @@ void loop() {
       }
 
       if (btnL.isPressed()) {
-        if (selectedOption == 0) currState = ADD_ALARM;
-        if (selectedOption == 1) currState = REMOVE_ALARM;
+        if (selectedOption == 0) {
+          if (clock.nAlarmSet == clock.nMaxAlarm) {
+            printToDisplay("MemFulled!", 5, 10, 1000);
+            tone(speakerPin, failFreq, 100);
+            break;
+          }
+          
+          currState = ADD_ALARM;
+        }
+        if (selectedOption == 1)
+          currState = REMOVE_ALARM;
 
         selectedOption = 0;
       }
@@ -263,11 +296,6 @@ void loop() {
 
     case ADD_ALARM: {
       timePaused = false;
-
-      if (clock.nAlarmSet == clock.nMaxAlarm) {
-        printToDisplay("Full", 15, 10);
-        currState = DISPLAY_TIME;
-      }
 
       static enum { HOUR, MIN, SEC } setMode = HOUR;
       static unsigned long completedTime = 0;
@@ -291,13 +319,14 @@ void loop() {
           setAlarmCompleted = true;
 
           clock.alarmTime[clock.nAlarmSet] = alarmSetTime;
-          clock.nAlarmSet++;
 
           printToDisplay("Alarm Set!", 7, 10);
+          tone(speakerPin, successFreq, 100);
         }
       }
 
       if (setAlarmCompleted && millis() - completedTime > 1000) {
+        clock.nAlarmSet++;
         setMode = HOUR;
         completedTime = 0;
         setAlarmCompleted = false;
