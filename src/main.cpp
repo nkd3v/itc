@@ -324,10 +324,17 @@ void loop() {
 
       static enum { HOUR, MIN, SEC } setMode = HOUR;
 
-      const unsigned long advancedTime[3] = {3600, 60, 1};
+      unsigned long hour = timeToSet / 3600;
+      unsigned long min = (timeToSet % 3600) / 60;
+      unsigned long sec = timeToSet % 60;
 
-      if (btnR.isPressed())
-        timeToSet = (timeToSet + advancedTime[setMode]) % 86400;
+      if (btnR.isPressed()) {
+        if      (setMode == HOUR) hour = (hour + 1) % 24;
+        else if (setMode == MIN)  min = (min + 1) % 60;
+        else if (setMode == SEC)  sec = (sec + 1) % 60;
+      }
+
+      timeToSet = hour * 3600 + min * 60 + sec;
 
       if (btnM.isPressed()) {
         if (setMode == HOUR) {
@@ -415,10 +422,17 @@ void loop() {
       static enum { HOUR, MIN, SEC } setMode = HOUR;
       static unsigned long alarmSetTime = 0;
 
-      static const unsigned long advancedTime[3] = {3600, 60, 1};
+      unsigned long hour = alarmSetTime / 3600;
+      unsigned long min = (alarmSetTime % 3600) / 60;
+      unsigned long sec = alarmSetTime % 60;
 
-      if (btnR.isPressed())
-        alarmSetTime = (alarmSetTime + advancedTime[setMode]) % 86400;
+      if (btnR.isPressed()) {
+        if      (setMode == HOUR) hour = (hour + 1) % 24;
+        else if (setMode == MIN)  min = (min + 1) % 60;
+        else if (setMode == SEC)  sec = (sec + 1) % 60;
+      }
+
+      alarmSetTime = hour * 3600 + min * 60 + sec;
 
       if (btnM.isPressed()) {
         if (setMode == HOUR) {
