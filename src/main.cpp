@@ -26,7 +26,7 @@ const unsigned int beepFreq = 500;
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C
 
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_SSD1306 OLED(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // 'menu', 128x32px
 const unsigned char menu [] PROGMEM = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -160,10 +160,10 @@ void printToDisplay(const char* txt, int x, int y, unsigned long duration = 0) {
   prevPrintTime = millis();
   printDuration = duration;
 
-  display.clearDisplay();
-  display.setCursor(x, y);
-  display.println(txt);
-  display.display();
+  OLED.clearDisplay();
+  OLED.setCursor(x, y);
+  OLED.println(txt);
+  OLED.display();
 }
 
 void drawToDisplay(const unsigned char* bitmap, int x, int y, unsigned long duration = 0) {
@@ -172,9 +172,9 @@ void drawToDisplay(const unsigned char* bitmap, int x, int y, unsigned long dura
   prevDrawTime = millis();
   drawDuration = duration;
 
-  display.clearDisplay();
-  display.drawBitmap(x, y, bitmap, 128, 32, 1);
-  display.display();
+  OLED.clearDisplay();
+  OLED.drawBitmap(x, y, bitmap, 128, 32, 1);
+  OLED.display();
 }
 
 void displayTime(unsigned long time) {
@@ -218,7 +218,7 @@ void setup() {
   
   Serial.begin(9600);
 
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+  if(!OLED.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println(F("SSD1306 allocation failed"));
     for(;;);
   }
@@ -237,24 +237,24 @@ void setup() {
 
   drawToDisplay(shark, 0, 0, 2000);
 
-  display.setTextColor(WHITE);
-  display.setTextSize(2);
-  display.setRotation(2);
+  OLED.setTextColor(WHITE);
+  OLED.setTextSize(2);
+  OLED.setRotation(2);
 }
 
 void loop() {
 
   if (analogRead(ldrPin) > 480)
-    display.dim(true);
+    OLED.dim(true);
   else
-    display.dim(false);
+    OLED.dim(false);
 
   float xAccel = (analogRead(xPin) - 507) / 112.;
   
   if (xAccel > 0.4)
-    display.setRotation(0);
+    OLED.setRotation(0);
   else if (xAccel < -0.4)
-    display.setRotation(2);
+    OLED.setRotation(2);
 
   static enum STATE {
     DISPLAY_TIME, SET_TIME, ALARM_MENU,
@@ -368,14 +368,14 @@ void loop() {
       displayTime(timeToSet);
 
       if (setMode == HOUR) {
-        display.drawLine(15, 28, 36, 28, WHITE);
+        OLED.drawLine(15, 28, 36, 28, WHITE);
       } else if (setMode == MIN) {
-        display.drawLine(51, 28, 72, 28, WHITE);
+        OLED.drawLine(51, 28, 72, 28, WHITE);
       } else if (setMode == SEC) {
-        display.drawLine(87, 28, 108, 28, WHITE);
+        OLED.drawLine(87, 28, 108, 28, WHITE);
       }
 
-      display.display();
+      OLED.display();
 
       break;
     }
@@ -469,14 +469,14 @@ void loop() {
       displayTime(alarmSetTime);
 
       if (setMode == HOUR) {
-        display.drawLine(15, 28, 36, 28, WHITE);
+        OLED.drawLine(15, 28, 36, 28, WHITE);
       } else if (setMode == MIN) {
-        display.drawLine(51, 28, 72, 28, WHITE);
+        OLED.drawLine(51, 28, 72, 28, WHITE);
       } else if (setMode == SEC) {
-        display.drawLine(87, 28, 108, 28, WHITE);
+        OLED.drawLine(87, 28, 108, 28, WHITE);
       }
 
-      display.display();
+      OLED.display();
 
       break;
     }
