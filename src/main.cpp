@@ -125,9 +125,6 @@ Button btnR(btnRPin);
 boolean timePaused = false;
 int eeAddress = 0;
 
-boolean stopwatchPaused = true;
-unsigned long stopwatchTotalTime = 0;
-
 struct Clock {
   unsigned long time;
   unsigned long alarmTime[5];
@@ -208,9 +205,6 @@ void updateTime() {
 
   if (clock.time % 60 == 0)
     EEPROM.put(eeAddress, clock);
-
-  if (!stopwatchPaused)
-    stopwatchTotalTime++;
 }
 
 void updateDisplayConfig() {
@@ -493,10 +487,22 @@ void updateState() {
     case STOPWATCH: {
       static boolean firstInit = true;
 
+      static boolean stopwatchPaused = true;
+      static unsigned long stopwatchTotalTime = 0;
+
+      static unsigned long prevTime = millis();
+
       if (firstInit) {
-        stopwatchTotalTime = 0;
         stopwatchPaused = true;
+        prevTime = millis();
         firstInit = false;
+      }
+      
+      unsigned long deltaTime = millis() - prevTime;
+      prevTime = millis();
+
+      if (!stopwatchPaused) {
+        stopwatchTotalTime += deltaTime;
       }
 
       if (btnL.isPressed()) {
@@ -514,7 +520,7 @@ void updateState() {
         stopwatchPaused = !stopwatchPaused;
       }
 
-      displayTime(stopwatchTotalTime);
+      displayTime(stopwatchTotalTime * 60 / 1000);
     }
 
     default:
