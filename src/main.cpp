@@ -20,6 +20,7 @@ const uint8_t speakerPin = 8;
 const unsigned int successFreq = 700;
 const unsigned int failFreq = 200;
 const unsigned int beepFreq = 500;
+const unsigned int sleepFreq = 5;
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 32
@@ -125,9 +126,14 @@ Button btnR(btnRPin);
 boolean timePaused = false;
 int eeAddress = 0;
 
+struct Alarm {
+  char type[20];
+  unsigned long time;
+};
+
 struct Clock {
   unsigned long time;
-  unsigned long alarmTime[5];
+  Alarm alarm[5];
   int nMaxAlarm = 5;
   byte nAlarmSet;
 } clock;
@@ -169,7 +175,7 @@ void displayTime(unsigned long time) {
   unsigned long hour = time / 3600;
 
   char timeStr[10];
-  sprintf(timeStr, "%02ld:%02ld:%02ld", hour, min, sec);
+  sprintf(timeStr, "%02lu:%02lu:%02lu", hour, min, sec);
 
   printToDisplay(timeStr, 15, 10);
 }
@@ -190,7 +196,7 @@ void checkAlarm() {
   static unsigned int alarmStartTime;
   if (!alarmActive) {
     for (int i = 0; i < clock.nAlarmSet; i++) {
-      if (clock.time == clock.alarmTime[i]) {
+      if (clock.time == clock.alarm[i].time) {
         alarmActive = true;
         alarmStartTime = millis();
       }
@@ -201,7 +207,7 @@ void checkAlarm() {
 }
 
 void updateTime() {
-  clock.time++;
+  clock.time = (clock.time + 1) % 86400;
 
   if (clock.time % 60 == 0)
     EEPROM.put(eeAddress, clock);
@@ -228,14 +234,21 @@ void updateDisplayConfig() {
 void updateState() {
 
   static enum STATE {
-    DISPLAY_TIME, SET_TIME, ALARM_MENU,
-    STOPWATCH, MENU,
-    ADD_ALARM, REMOVE_ALARM
+    DISPLAY_TIME,
+    SET_TIME,
+    ALARM_MENU,
+    STOPWATCH,
+    MENU,
+    ADD_ALARM_SELECT_TIME,
+    ADD_ALARM_SELECT_TYPE,
+    REMOVE_ALARM
   } currentState;
 
   switch (currentState) {
 
     case DISPLAY_TIME: {
+      static boolean turnOffDisplay = false;
+
       checkAlarm();
 
       if (alarmActive) {
@@ -246,10 +259,29 @@ void updateState() {
         break;
       }
 
+      if (btnL.isPressed()) {
+        turnOffDisplay = !turnOffDisplay;
+        if (turnOffDisplay == true) {
+          tone(speakerPin, sleepFreq, 200);
+        }
+      }
+
+      if (turnOffDisplay) {
+        OLED.clearDisplay();
+        OLED.display();
+        break;
+      }
+
       if (btnM.isPressed()) {
         drawToDisplay(menu, 0, 0, 500);
         currentState = MENU;
         break;
+      }
+
+      if (btnR.isPressed()) {
+        EEPROM.put(eeAddress, clock);
+        printToDisplay("Saved!", 15, 10, 500);
+        tone(speakerPin, successFreq, 100);
       }
 
       displayTime(clock.time);
@@ -369,7 +401,7 @@ void updateState() {
             break;
           }
           
-          currentState = ADD_ALARM;
+          currentState = ADD_ALARM_SELECT_TIME;
         } else if (selectedOption == 1) {
           currentState = REMOVE_ALARM;
         }
@@ -387,7 +419,7 @@ void updateState() {
       break;
     }
 
-    case ADD_ALARM: {
+    case ADD_ALARM_SELECT_TIME: {
       static enum { HOUR, MIN, SEC } setMode = HOUR;
       static unsigned long alarmSetTime = 0;
 
@@ -410,7 +442,7 @@ void updateState() {
         else if (setMode == MIN)
           setMode = SEC;
         else if (setMode == SEC) {
-          clock.alarmTime[clock.nAlarmSet] = alarmSetTime;
+          clock.alarm[clock.nAlarmSet].time = alarmSetTime;
           clock.nAlarmSet++;
 
           setMode = HOUR;
@@ -451,6 +483,16 @@ void updateState() {
       break;
     }
     
+    case ADD_ALARM_SELECT_TYPE: {
+      static enum { WAKE_UP, HOMEWORK, MEETING, OTHER } setMode = WAKE_UP;
+
+      if (btnL.isPressed()) {
+        currentState = ADD_ALARM_SELECT_TIME;
+      }
+
+
+    }
+
     case REMOVE_ALARM: {
       static int selectedOption = 0;
 
@@ -462,7 +504,7 @@ void updateState() {
 
       if (btnM.isPressed()) {
         for (int i = selectedOption; i < clock.nAlarmSet - 1; i++) {
-          clock.alarmTime[i] = clock.alarmTime[i + 1];
+          clock.alarm[i] = clock.alarm[i + 1];
         }
         clock.nAlarmSet--;
         EEPROM.put(eeAddress, clock);
@@ -479,7 +521,7 @@ void updateState() {
         selectedOption = (selectedOption + 1) % clock.nAlarmSet;
       }
 
-      displayTime(clock.alarmTime[selectedOption]);
+      displayTime(clock.alarm[selectedOption].time);
 
       break;
     }
@@ -544,8 +586,7 @@ void setup() {
   btnM.begin();
   btnR.begin();
   
-  clock = Clock();
-  EEPROM.put(eeAddress, clock);
+  EEPROM.get(eeAddress, clock);
 
   Timer1.initialize(1E6);
   Timer1.attachInterrupt(updateTime);
