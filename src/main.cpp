@@ -126,8 +126,29 @@ Button btnR(btnRPin);
 boolean timePaused = false;
 int eeAddress = 0;
 
+enum AlarmType {
+  WAKE_UP,
+  HOMEWORK,
+  MEETING,
+  OTHER
+};
+
+const char *alarmTypeMsg[] = {
+  "Wake Up!",
+  "Homework!",
+  "Meeting!",
+  "Alarmed!"
+};
+
+const char *alarmTypeSelectionMsg[] = {
+  "Wake Up",
+  "Homework",
+  "Meeting",
+  "Other"
+};
+
 struct Alarm {
-  char type[20];
+  AlarmType type;
   unsigned long time;
 };
 
@@ -136,6 +157,7 @@ struct Clock {
   Alarm alarm[5];
   int nMaxAlarm = 5;
   byte nAlarmSet;
+  unsigned long stopwatchTime;
 } clock;
 
 unsigned long prevPrintTime;
@@ -146,7 +168,7 @@ unsigned long prevDrawTime;
 unsigned long drawDuration;
 boolean drawLocked() { return millis() - prevDrawTime < drawDuration; }
 
-void printToDisplay(const char* txt, int x, int y, unsigned long duration = 0) {
+void printToBuffer(const char* txt, int x, int y, unsigned long duration = 0) {
   if (printLocked() || drawLocked()) return;
 
   prevPrintTime = millis();
@@ -158,7 +180,7 @@ void printToDisplay(const char* txt, int x, int y, unsigned long duration = 0) {
   OLED.display();
 }
 
-void drawToDisplay(const unsigned char* bitmap, int x, int y, unsigned long duration = 0) {
+void drawToBuffer(const unsigned char* bitmap, int x, int y, unsigned long duration = 0) {
   if (drawLocked() || printLocked()) return;
 
   prevDrawTime = millis();
@@ -177,32 +199,34 @@ void displayTime(unsigned long time) {
   char timeStr[10];
   sprintf(timeStr, "%02lu:%02lu:%02lu", hour, min, sec);
 
-  printToDisplay(timeStr, 15, 10);
+  printToBuffer(timeStr, 15, 10);
 }
 
 boolean alarmActive = false;
 
-void playAlarm(unsigned long startTime) {
+void playAlarm(unsigned long startTime, const char *msg) {
   if ((millis() - startTime) % 400 > 200) {
-    printToDisplay("Alarmed!", 15, 10);
+    printToBuffer(msg, 15, 10);
     tone(speakerPin, beepFreq);
   } else {
-    printToDisplay("", 15, 10);
+    printToBuffer("", 15, 10);
     noTone(speakerPin);
   }
 }
 
 void checkAlarm() {
+  static Alarm livedAlarm;
   static unsigned int alarmStartTime;
   if (!alarmActive) {
     for (int i = 0; i < clock.nAlarmSet; i++) {
       if (clock.time == clock.alarm[i].time) {
         alarmActive = true;
         alarmStartTime = millis();
+        livedAlarm = clock.alarm[i];
       }
     }
   } else {
-    playAlarm(alarmStartTime);
+    playAlarm(alarmStartTime, alarmTypeMsg[livedAlarm.type]);
   }
 }
 
@@ -239,8 +263,7 @@ void updateState() {
     ALARM_MENU,
     STOPWATCH,
     MENU,
-    ADD_ALARM_SELECT_TIME,
-    ADD_ALARM_SELECT_TYPE,
+    ADD_ALARM,
     REMOVE_ALARM
   } currentState;
 
@@ -273,14 +296,14 @@ void updateState() {
       }
 
       if (btnM.isPressed()) {
-        drawToDisplay(menu, 0, 0, 500);
+        drawToBuffer(menu, 0, 0, 500);
         currentState = MENU;
         break;
       }
 
       if (btnR.isPressed()) {
         EEPROM.put(eeAddress, clock);
-        printToDisplay("Saved!", 15, 10, 500);
+        printToBuffer("Saved!", 15, 10, 500);
         tone(speakerPin, successFreq, 100);
       }
 
@@ -310,7 +333,7 @@ void updateState() {
         selectedOption = (selectedOption + 1) % nMode;
       }
       
-      printToDisplay(modeName[selectedOption], 15, 10);
+      printToBuffer(modeName[selectedOption], 15, 10);
 
       break;
     }
@@ -354,7 +377,7 @@ void updateState() {
           firstInit = true;
 
           tone(speakerPin, successFreq, 200);
-          printToDisplay("Time set!", 15, 10, 1000);
+          printToBuffer("Time set!", 15, 10, 1000);
           break;
         }
       }
@@ -397,11 +420,11 @@ void updateState() {
         if (selectedOption == 0) {
           if (clock.nAlarmSet == clock.nMaxAlarm) {
             tone(speakerPin, failFreq, 200);
-            printToDisplay("MemFulled!", 5, 10, 1000);
+            printToBuffer("MemFulled!", 5, 10, 1000);
             break;
           }
           
-          currentState = ADD_ALARM_SELECT_TIME;
+          currentState = ADD_ALARM;
         } else if (selectedOption == 1) {
           currentState = REMOVE_ALARM;
         }
@@ -414,61 +437,81 @@ void updateState() {
         selectedOption = (selectedOption + 1) % nOptions;
       }
       
-      printToDisplay(modeName[selectedOption], 15, 10);
+      printToBuffer(modeName[selectedOption], 15, 10);
 
       break;
     }
 
-    case ADD_ALARM_SELECT_TIME: {
-      static enum { HOUR, MIN, SEC } setMode = HOUR;
-      static unsigned long alarmSetTime = 0;
+    case ADD_ALARM: {
+      static boolean firstInit = true;
+
+      static enum { HOUR, MIN, SEC, TYPE } setMode = HOUR;
+
+      static Alarm alarmToSet;
+
+      if (firstInit) {
+        alarmToSet = {};
+        setMode = {};
+        firstInit = false;
+      }
 
       if (btnL.isPressed()) {
         if (setMode == HOUR) {
           currentState = ALARM_MENU;
-          alarmSetTime = 0;
-          setMode = HOUR;
+          firstInit = true;
           break;
         } else if (setMode == MIN) {
           setMode = HOUR;
         } else if (setMode == SEC) {
           setMode = MIN;
+        } else if (setMode == TYPE) {
+          setMode = SEC;
         }
       }
 
       if (btnM.isPressed()) {
-        if (setMode == HOUR)
+        if (setMode == HOUR) {
           setMode = MIN;
-        else if (setMode == MIN)
+        }
+        else if (setMode == MIN) {
           setMode = SEC;
+        }
         else if (setMode == SEC) {
-          clock.alarm[clock.nAlarmSet].time = alarmSetTime;
+          setMode = TYPE;
+        } else if (setMode == TYPE) {
+          clock.alarm[clock.nAlarmSet] = alarmToSet;
           clock.nAlarmSet++;
 
-          setMode = HOUR;
-          alarmSetTime = 0;
+          tone(speakerPin, successFreq, 200);
+          printToBuffer("Alarm Set!", 7, 10, 1000);
 
           currentState = DISPLAY_TIME;
-
-          tone(speakerPin, successFreq, 200);
-          printToDisplay("Alarm Set!", 7, 10, 1000);
+          firstInit = true;
           break;
         }
       }
 
-      unsigned long hour = alarmSetTime / 3600;
-      unsigned long min = (alarmSetTime % 3600) / 60;
-      unsigned long sec = alarmSetTime % 60;
+      unsigned long hour = alarmToSet.time / 3600;
+      unsigned long min = (alarmToSet.time % 3600) / 60;
+      unsigned long sec = alarmToSet.time % 60;
 
       if (btnR.isPressed()) {
         if      (setMode == HOUR) hour = (hour + 1) % 24;
         else if (setMode == MIN)  min = (min + 1) % 60;
         else if (setMode == SEC)  sec = (sec + 1) % 60;
+        else if (setMode == TYPE) {
+          uint8_t iType = (alarmToSet.type + 1) % 4;
+          alarmToSet.type = (AlarmType)iType;
+        }
       }
 
-      alarmSetTime = hour * 3600 + min * 60 + sec;
+      alarmToSet.time = hour * 3600 + min * 60 + sec;
 
-      displayTime(alarmSetTime);
+      if (setMode != TYPE) {
+        displayTime(alarmToSet.time);
+      } else {
+        printToBuffer(alarmTypeSelectionMsg[alarmToSet.type], 15, 10);
+      }
 
       if (setMode == HOUR) {
         OLED.drawLine(15, 28, 36, 28, WHITE);
@@ -481,16 +524,6 @@ void updateState() {
       OLED.display();
 
       break;
-    }
-    
-    case ADD_ALARM_SELECT_TYPE: {
-      static enum { WAKE_UP, HOMEWORK, MEETING, OTHER } setMode = WAKE_UP;
-
-      if (btnL.isPressed()) {
-        currentState = ADD_ALARM_SELECT_TIME;
-      }
-
-
     }
 
     case REMOVE_ALARM: {
@@ -510,7 +543,7 @@ void updateState() {
         EEPROM.put(eeAddress, clock);
 
         tone(speakerPin, successFreq, 200);
-        printToDisplay("Removed!", 10, 10, 1000);
+        printToBuffer("Removed!", 10, 10, 1000);
 
         selectedOption = 0;
         currentState = DISPLAY_TIME;
@@ -527,42 +560,38 @@ void updateState() {
     }
 
     case STOPWATCH: {
-      static boolean firstInit = true;
 
       static boolean stopwatchPaused = true;
-      static unsigned long stopwatchTotalTime = 0;
-
       static unsigned long prevTime = millis();
-
-      if (firstInit) {
-        stopwatchPaused = true;
-        prevTime = millis();
-        firstInit = false;
-      }
       
       unsigned long deltaTime = millis() - prevTime;
       prevTime = millis();
 
       if (!stopwatchPaused) {
-        stopwatchTotalTime += deltaTime;
+        clock.stopwatchTime += deltaTime;
       }
 
       if (btnL.isPressed()) {
         currentState = MENU;
-        firstInit = true;
         break;
       }
 
       if (btnM.isPressed()) {
         stopwatchPaused = true;
-        stopwatchTotalTime = 0;
+        clock.stopwatchTime = 0;
+
+        EEPROM.put(eeAddress, clock);
       }
 
       if (btnR.isPressed()) {
         stopwatchPaused = !stopwatchPaused;
+
+        if (stopwatchPaused) {
+          EEPROM.put(eeAddress, clock);
+        }
       }
 
-      displayTime(stopwatchTotalTime * 60 / 1000);
+      displayTime(clock.stopwatchTime * 60 / 1000);
     }
 
     default:
@@ -586,12 +615,13 @@ void setup() {
   btnM.begin();
   btnR.begin();
   
-  EEPROM.get(eeAddress, clock);
+  clock = {};
+  EEPROM.put(eeAddress, clock);
 
   Timer1.initialize(1E6);
   Timer1.attachInterrupt(updateTime);
 
-  drawToDisplay(shark, 0, 0, 2000);
+  drawToBuffer(shark, 0, 0, 2000);
 
   OLED.setTextColor(WHITE);
   OLED.setTextSize(2);
