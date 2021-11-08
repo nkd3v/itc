@@ -177,7 +177,6 @@ void printToBuffer(const char* txt, int x, int y, unsigned long duration = 0) {
   OLED.clearDisplay();
   OLED.setCursor(x, y);
   OLED.println(txt);
-  OLED.display();
 }
 
 void drawToBuffer(const unsigned char* bitmap, int x, int y, unsigned long duration = 0) {
@@ -188,7 +187,6 @@ void drawToBuffer(const unsigned char* bitmap, int x, int y, unsigned long durat
 
   OLED.clearDisplay();
   OLED.drawBitmap(x, y, bitmap, 128, 32, 1);
-  OLED.display();
 }
 
 void displayTime(unsigned long time) {
@@ -237,6 +235,17 @@ void updateTime() {
     EEPROM.put(eeAddress, clock);
 }
 
+const size_t sampleSize = 6;
+
+int ReadAxis(int axisPin) {
+	long reading = 0;
+	delay(1);
+	for (int i = 0; i < sampleSize; i++) {
+	  reading += analogRead(axisPin);
+	}
+	return reading/sampleSize;
+}
+
 void updateDisplayConfig() {
 
   if (analogRead(ldrPin) > 480) {
@@ -245,13 +254,14 @@ void updateDisplayConfig() {
     OLED.dim(false);
   }
 
-  float xAccel = (analogRead(xPin) - 507) / 112.;
+  float xAccel = (ReadAxis(xPin) - 507) / 112.;
   
-  if (xAccel > 0.4) {
+  if (xAccel > 0.3) {
     OLED.setRotation(0);
-  } else if (xAccel < -0.4) {
+  } else if (xAccel < -0.3) {
     OLED.setRotation(2);
   }
+  Serial.println(xAccel);
 
 }
 
@@ -400,8 +410,6 @@ void updateState() {
         OLED.drawLine(87, 28, 108, 28, WHITE);
       }
 
-      OLED.display();
-
       break;
     }
 
@@ -482,6 +490,8 @@ void updateState() {
           clock.alarm[clock.nAlarmSet] = alarmToSet;
           clock.nAlarmSet++;
 
+          EEPROM.put(eeAddress, clock);
+
           tone(speakerPin, successFreq, 200);
           printToBuffer("Alarm Set!", 7, 10, 1000);
 
@@ -520,8 +530,6 @@ void updateState() {
       } else if (setMode == SEC) {
         OLED.drawLine(87, 28, 108, 28, WHITE);
       }
-
-      OLED.display();
 
       break;
     }
@@ -598,6 +606,7 @@ void updateState() {
       break;
   }
   
+  OLED.display();
 }
 
 void setup() {
@@ -615,8 +624,7 @@ void setup() {
   btnM.begin();
   btnR.begin();
   
-  clock = {};
-  EEPROM.put(eeAddress, clock);
+  EEPROM.get(eeAddress, clock);
 
   Timer1.initialize(1E6);
   Timer1.attachInterrupt(updateTime);
